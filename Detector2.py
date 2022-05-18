@@ -25,46 +25,17 @@ import requests
 import cv2
 import base64
 import json
-
-id_dict = {}
-res_dict = {}
-mutex = QtCore.QMutex()
+from sort import *
 
 
-class PostApi(QtCore.QThread):
-    signal = pyqtSignal(dict)
+def compute_color_for_id(label):
+    """
+    Simple function that adds fixed color depending on the id
+    """
+    palette = (2 ** 11 - 1, 2 ** 15 - 1, 2 ** 20 - 1)
 
-    def __init__(self, index=0, parent=None):
-        super().__init__()
-        self.index = index
-        # self.api = "http://192.168.1.33:8000/image_post"
-        self.api = "http://192.168.1.16:8000/image_post"
-        self.headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
-        self.is_running = True
-
-    def run(self):
-        global res_dict
-        while self.is_running:
-            mutex.lock()
-            send_dict = id_dict.copy()
-            # print("send_dict:", send_dict)
-            mutex.unlock()
-            try:
-                res = requests.post(self.api, json=json.dumps(send_dict), timeout=10, headers=self.headers).text
-                res = json.loads(res)
-                mutex.lock()
-                res_dict = res.copy()
-                mutex.unlock()
-            except:
-                pass
-            # res_dict = {"1": "Em gai"}
-            # print("Class PostApi: ", res_dict)
-            # self.signal.emit(res_dict)
-            time.sleep(0.0001)
-
-    def stop(self):
-        print('Stopping thread...', self.index)
-        self.is_running = False
+    color = [int((p * (label ** 2 - label + 1)) % 255) for p in palette]
+    return tuple(color)
 
 
 # MAIN
@@ -81,14 +52,14 @@ class DetectorThread(QtCore.QThread):
         self.source = r"C:\Users\Admin\Downloads\video-1636524259.mp4"
         self.weights = 'yolov5s.pt'
         self.data = 'data/coco128.yaml'  # dataset.yaml path
-        self.imgsz = 640  # inference size (height, width)
+        self.imgsz = 1280  # inference size (height, width)
         self.conf_thres = 0.25  # confidence threshold
         self.iou_thres = 0.45  # NMS IOU threshold
         self.max_det = 1000  # maximum detections per image
         self.device = 0  # cuda device, i.e. 0 or 0,1,2,3 or cpu
         self.save_crop = False  # save cropped prediction boxes
         # filter by class: --class 0, or --class 0 2 3
-        self.classes = [0]  # (80) range of classes
+        self.classes = [2, 5]  # (80) range of classes
         self.agnostic_nms = True  # class-agnostic NMS
         self.line_thickness = 1  # bounding box thickness (pixels)
         self.hide_labels = False  # hide labels
@@ -96,21 +67,15 @@ class DetectorThread(QtCore.QThread):
         self.half = True  # use FP16 half-precision inference
         self.dnn = False  # use OpenCV DNN for ONNX inference
 
-    def setup(self, a_source, a_model):
+    def setup(self, a_source):
         self.source = a_source
-        self.weights = a_model
 
     @torch.no_grad()
     def run(self):
         # Load deepsort
-        cfg = get_config()
-        cfg.merge_from_file(opt.config_deepsort)
-        deepsort = DeepSort(cfg.DEEPSORT.REID_CKPT,
-                            max_dist=cfg.DEEPSORT.MAX_DIST, min_confidence=cfg.DEEPSORT.MIN_CONFIDENCE,
-                            nms_max_overlap=cfg.DEEPSORT.NMS_MAX_OVERLAP,
-                            max_iou_distance=cfg.DEEPSORT.MAX_IOU_DISTANCE,
-                            max_age=cfg.DEEPSORT.MAX_AGE, n_init=cfg.DEEPSORT.N_INIT, nn_budget=cfg.DEEPSORT.NN_BUDGET,
-                            use_cuda=True)
+        sort_tracker = Sort(max_age=25 * 5,
+                            min_hits=2,
+                            iou_threshold=0.5)
         # Load model
         device = select_device(self.device)
         model = DetectMultiBackend(self.weights, device=device, dnn=self.dnn)
@@ -124,9 +89,6 @@ class DetectorThread(QtCore.QThread):
         print('Starting thread...', self.index)
         self.source = str(self.source)
         cap = cv2.VideoCapture(self.source)
-        count = 0
-        global id_dict
-        global res_dict
         count = 0
         while self.is_running:
             s = time.time()
@@ -156,50 +118,34 @@ class DetectorThread(QtCore.QThread):
             # NMS
             pred = non_max_suppression(pred, self.conf_thres, self.iou_thres, self.classes, self.agnostic_nms,
                                        max_det=self.max_det)
+
             # Process predictions
-            id_dict_local = {}
-            spot_dict_local = {}
             for i, det in enumerate(pred):  # per image
                 if len(det):
                     # Rescale boxes from img_size to im0 size
                     det[:, :4] = scale_coords(im.shape[2:], det[:, :4], im0.shape).round()
                     # Write results
-                    xyxys, confs, clss = [], [], []
-                    for *xyxy, conf, cls in reversed(det):
-                        x1, y1, x2, y2 = int(xyxy[0]), int(xyxy[1]), int(xyxy[2]), int(xyxy[3])
-                        # cv2.imwrite(f"LP_image/{x1}_{y1}_{x2}_{y2}.jpg", im0[y1:y2, x1:x2])
-                        xyxys.append([x1, y1, x2, y2])
-                        confs.append(conf)
-                        clss.append(cls)
+            dets_to_sort = np.empty((0, 6))
 
-                    xywhs = xyxy2xywh(torch.Tensor(xyxys))
-                    confs = torch.Tensor(confs)
-                    clss = torch.tensor(clss)
-                    outputs = deepsort.update(xywhs.cpu(), confs.cpu(), clss, im0)
-                    if len(outputs) > 0:
-                        for j, (output, conf) in enumerate(zip(outputs, confs)):
-                            x1, y1, x2, y2 = output[0:4]
-                            id = output[4]
-                            crop = img0[y1:y2, x1:x2]
-                            # if count % 5 == 0:
-                            byte_array = cv2.imencode('.jpg', crop)[1].tobytes()
-                            byte_base64 = base64.b64encode(byte_array).decode()
-                            id_dict_local[str(id)] = byte_base64
-                            spot_dict_local[str(id)] = [x1, y1, x2, y2]
-                            cv2.rectangle(im0, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    # if count % 5 == 0:
-                    mutex.lock()
-                    del id_dict
-                    id_dict = {}
-                    for key, val in id_dict_local.items():
-                        id_dict[key] = val
-                    for key in res_dict:
-                        if key in spot_dict_local.keys():
-                            x1, y1, x2, y2 = spot_dict_local[key]
-                            name = res_dict[key]
-                            cv2.putText(im0, f"{name}", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                    # print("Class Images:", res_dict.keys(), spot_dict_local.keys())
-                    mutex.unlock()
+            # Pass detections to SORT
+            # NOTE: We send in detected object class too
+            for x1, y1, x2, y2, conf, detclass in det.cpu().detach().numpy():
+                dets_to_sort = np.vstack((dets_to_sort, np.array([x1, y1, x2, y2, conf, detclass])))
+
+            # Run SORT
+            tracked_dets = sort_tracker.update(dets_to_sort)
+
+            if len(tracked_dets) > 0:
+                bbox_xyxy = tracked_dets[:, :4]
+                identities = tracked_dets[:, 8]
+                categories = tracked_dets[:, 4]
+                for bbox, detclass, identity in zip(bbox_xyxy, categories, identities):
+                    x1, y1, x2, y2 = list(map(int, bbox))
+                    identity = int(identity)
+                    cv2.rectangle(im0, (x1, y1), (x2, y2), compute_color_for_id(detclass), 2)
+                    cv2.putText(im0, str(identity), (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1,
+                                compute_color_for_id(detclass),
+                                2)
 
             FPS = 1 // (time.time() - s)
             cv2.putText(im0, '%g FPS' % FPS, (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)

@@ -12,15 +12,16 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtGui import QBrush, QColor, QImage, QPainter, QPen
 from PyQt5.QtCore import Qt
 
+
 class Ui_MainWindow(QtWidgets.QMainWindow):
     def setupUi(self, MainWindow):
-        expand = 2
         MainWindow.setObjectName("MainWindow")
         W, H = 1366, 768
+        expand = 2
         MainWindow.resize(W, H)
         self.centralwidget = QtWidgets.QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
-        
+
         self.img1 = QtWidgets.QLabel(self.centralwidget)
         self.img1.setGeometry(QtCore.QRect(0, 0, W // 2 - expand, H // 2 - expand))
         self.img1.setObjectName("img1")
@@ -39,6 +40,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
 
         MainWindow.setCentralWidget(self.centralwidget)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
+
 
 if __name__ == "__main__":
     import sys

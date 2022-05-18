@@ -5,7 +5,7 @@ from PyQt5 import QtGui
 from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5 import QtCore
 from ui_display import Ui_MainWindow
-from Detector2 import DetectorThread, DetectorFree, PostApi
+from Detector2 import DetectorThread, DetectorFree
 import cv2
 from PyQt5.QtGui import QBrush, QColor, QImage, QPainter, QPen
 from PyQt5.QtCore import Qt
@@ -18,75 +18,48 @@ class MainWindow(QMainWindow):
         self.uic.setupUi(self)
         self.thread = {}
         self.post_api_thread = {}
-        
+
+        self.video_path_1 = r"D:\Cam_D35\2022-05-17\CamBien_part1.mp4"
+        self.video_path_2 = r"D:\Cam_D35\2022-05-17\CamBien_part2.mp4"
+        self.video_path_3 = r"D:\Cam_D35\2022-05-17\D3_part1.mp4"
+        self.video_path_4 = r"D:\Cam_D35\2022-05-17\D3_part2.mp4"
+
         self.start_worker_1()
         self.start_worker_2()
         self.start_worker_3()
         self.start_worker_4()
-        self.W, self.H = self.uic.img1.width() * 2, self.uic.img1.height() * 2
+        self.W, self.H = self.uic.img4.width() * 2, self.uic.img4.height() * 2
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setPen(QPen(Qt.red, 4, Qt.SolidLine))
-        
+
         painter.drawLine(0, self.H // 2 + 2, self.W, self.H // 2 + 2)
         painter.drawLine(self.W // 2 + 2, 0, self.W // 2 + 2, self.H)
 
     def start_worker_1(self):
         self.thread[1] = DetectorFree(index=1)
-        # self.post_api_thread[1] = PostApi(index=1)
-        rstp1 = "rtsp://admin:atin%402022@192.168.1.232/profile1/media.smp"
-        self.thread[1].setup(rstp1)
+        self.thread[1].setup(self.video_path_1)
         self.thread[1].start()
-        # self.post_api_thread[1].start()
         self.thread[1].signal.connect(self.my_function)
 
     def start_worker_2(self):
-        self.thread[2] = DetectorFree(index=2)
-        # self.post_api_thread[2] = PostApi(index=2)
-        rstp2 = "rtsp://admin:atin%402022@192.168.1.232/profile1/media.smp"
-        self.thread[2].setup(rstp2)
+        self.thread[2] = DetectorThread(index=2)
+        self.thread[2].setup(self.video_path_2)
         self.thread[2].start()
-        # self.post_api_thread[2].start()
         self.thread[2].signal.connect(self.my_function)
 
     def start_worker_3(self):
-        self.thread[3] = DetectorFree(index=3)
-        rstp3 = "rtsp://admin:atin%402022@192.168.1.232/profile1/media.smp"
-        self.thread[3].setup(rstp3)
+        self.thread[3] = DetectorThread(index=3)
+        self.thread[3].setup(self.video_path_3)
         self.thread[3].start()
         self.thread[3].signal.connect(self.my_function)
 
     def start_worker_4(self):
-        self.thread[4] = DetectorFree(index=4)
-        # self.post_api_thread[1] = PostApi(index=1)
-        rstp4 = "rtsp://admin:atin%402022@192.168.1.232/profile1/media.smp"
-        self.thread[4].setup(rstp4)
+        self.thread[4] = DetectorThread(index=4)
+        self.thread[4].setup(self.video_path_4)
         self.thread[4].start()
-        # self.post_api_thread[1].start()
         self.thread[4].signal.connect(self.my_function)
-
-    # def stop_worker_1(self):
-    #     self.thread[1].stop()
-    #     # self.post_api_thread[1].stop()
-    #     self.uic.btn_stop_1.setEnabled(False)
-    #     self.uic.btn_start_1.setEnabled(True)
-
-    # def stop_worker_2(self):
-    #     self.thread[2].stop()
-    #     # self.post_api_thread[2].stop()
-    #     self.uic.btn_stop_2.setEnabled(False)
-    #     self.uic.btn_start_2.setEnabled(True)
-
-    # def stop_worker_3(self):
-    #     self.thread[3].stop()
-    #     self.uic.btn_stop_3.setEnabled(False)
-    #     self.uic.btn_start_3.setEnabled(True)
-
-    # def stop_worker_4(self):
-    #     self.thread[4].stop()
-    #     self.uic.btn_stop_4.setEnabled(False)
-    #     self.uic.btn_start_4.setEnabled(True)
 
     def my_function(self, img):
         img_c = img
